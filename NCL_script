@@ -1,0 +1,136 @@
+;   Example script to produce standard plots for a WRF squall run
+
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/wrf/WRFUserARW.ncl"
+;load "./WRFUserARW.ncl"
+
+begin
+;
+; The WRF ARW input file.  
+; This needs to have a ".nc" appended, so just do it.
+
+  a = addfile("./wrfout_d01_0001-01-01_00:00:00.nc","r")
+
+;  We generate plots, but what kind do we prefer?
+
+   type = "x11"
+;  type = "pdf"
+;  type = "ps"
+;  type = "ncgm"
+
+  wks = gsn_open_wks(type,"plt_Squall_2d_x")  
+  gsn_define_colormap(wks,"WhBlGrYeRe")
+
+
+
+; Set some Basic Plot options
+    res = True
+    res@MainTitle     = "WRF squall2D_x"         
+    res@InitTime      = False
+    res@Footer        = False
+
+    pltres = True
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;  What times and how many time steps are in the data set?
+
+  times  = wrf_user_list_times(a)  ; get times in the file
+  ntimes = dimsizes(times)         ; number of times in the file
+
+; The specific plane we want to plot data on
+
+  plane = (/ 20., 0./)   ; (x,y) point for vertical plane
+  angle = 90.0
+  pii = 3.14159
+  aspect_ratio = .7
+
+; This is the big loop over all of the time periods to process.
+
+  do it = 1,ntimes-1
+
+    time = it
+    res@TimeLabel                  = times(it)
+    res@AspectRatio                = aspect_ratio
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; First get the variables we will need        
+
+  qv  = wrf_user_getvar(a,"QVAPOR",time)    ; cloud field                    
+  qv  = qv*1000.                            ; convert to g/kg
+  qc  = wrf_user_getvar(a,"QCLOUD",time)    ; cloud field
+  qc  = qc*1000.                            ; convert to g/kg
+  qr  = wrf_user_getvar(a,"QRAIN",time)     ; cloud field
+  qr  = qr*1000.                            ; convert to g/kg
+  u   = wrf_user_getvar(a,"ua",time)        ; ua is u averaged to mass points
+  v   = wrf_user_getvar(a,"va",time)        ; va is v averaged to mass points
+  w  = wrf_user_getvar(a,"wa",time)         ; w field
+  z   = wrf_user_getvar(a, "z",time)        ; grid point height
+  ter    = wrf_user_getvar(a,"HGT",time)    ; need terrain height sometimes
+
+  qv_plane  = wrf_user_intrp3d(qv,z,"v",plane,angle,False)
+  qc_plane  = wrf_user_intrp3d(qc,z,"v",plane,angle,False)
+  qr_plane  = wrf_user_intrp3d(qr,z,"v",plane,angle,False)
+  u_plane   = wrf_user_intrp3d( u,z,"v",plane,angle,False)
+  v_plane   = wrf_user_intrp3d( v,z,"v",plane,angle,False)
+  w_plane   = wrf_user_intrp3d( w,z,"v",plane,angle,False)
+
+  vel_normal  = u_plane*cos(2.*pii*angle/360.) - v_plane*sin(2.*pii*angle/360.)
+  vel_tangent = u_plane*sin(2.*pii*angle/360.) + v_plane*cos(2.*pii*angle/360.)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  dims = dimsizes(qv)
+  res@tmYLMode    = "Explicit"
+  res@tmYLValues  = fspan(0.,100.,9)
+  res@tmYLLabels  = sprintf("%.1f",fspan(0.,dims(0),9))
+
+ ; QVAPOR
+      opts_qv  = res
+      opts_qv@FieldTitle           = qv@description
+      opts_qv@UnitLabel            = "g/kg"
+      opts_qv@cnFillOn             = True
+      opts_qv@gsnSpreadColorEnd    = -10   
+      opts_qv@PlotOrientation      = qv_plane@Orientation
+      contour_qv     = wrf_contour(a,wks,qv_plane,opts_qv)
+
+ ; QCLOUD
+      opts_qc  = res
+      opts_qc@FieldTitle           = qc@description
+      opts_qc@UnitLabel            = "g/kg"
+      opts_qc@cnFillOn             = True
+      opts_qc@gsnSpreadColorEnd    = -10   
+      opts_qc@PlotOrientation      = qc_plane@Orientation
+      contour_qc     = wrf_contour(a,wks,qc_plane,opts_qc)
+
+ ; QRAIN
+      opts_qr  = res
+      opts_qr@FieldTitle           = qr@description
+      opts_qr@UnitLabel            = "g/kg"
+      contour_qr     = wrf_contour(a,wks,qr_plane,opts_qr)
+
+ ; Vertical Velocity
+      opts_w   = res
+      opts_w@FieldTitle            = w@description
+      opts_w@cnFillOn              = True
+      opts_w@gsnSpreadColorEnd     = -10   
+      opts_w@PlotOrientation       = w_plane@Orientation
+      contour_w = wrf_contour(a,wks, w_plane,opts_w)
+
+ ; Vel Tangent
+      opts_vt   = res
+      opts_vt@FieldTitle           = "Plane-Tangent Velocity"
+      opts_vt@UnitLabel            = "m/s"
+      contour_vt     = wrf_contour(a,wks,vel_tangent,opts_vt)
+
+      plot = wrf_overlays(a,wks,(/contour_qc, contour_qr/),pltres)
+      plot = wrf_overlays(a,wks,(/contour_qv/),pltres)
+      plot = wrf_overlays(a,wks,(/contour_w, contour_vt/),pltres)
+
+  ;       ************************************************************
+
+  end do  ;       end of the time loop
+
+end
